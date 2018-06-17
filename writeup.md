@@ -1,1 +1,0 @@
-writeup_template.md
