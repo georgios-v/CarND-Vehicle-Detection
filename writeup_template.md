@@ -15,14 +15,21 @@ The goals / steps of this project are the following:
 * Estimate a bounding box for vehicles detected.
 
 [//]: # (Image References)
-[image1]: ./examples/car_not_car.png
-[image2]: ./examples/HOG_example.jpg
-[image3]: ./examples/sliding_windows.jpg
-[image4]: ./examples/sliding_window.jpg
-[image5]: ./examples/bboxes_and_heat.png
-[image6]: ./examples/labels_map.png
-[image7]: ./examples/output_bboxes.png
-[video1]: ./project_video.mp4
+[features_hog]: ./output_images/features_hog.png
+[features_spatial]: ./output_images/features_spatial.png
+[features_color]: ./output_images/features_color.png
+[find_cars]: ./output_images/find_cars.png
+[search_1]: ./output_images/search_1.png
+[search_2]: ./output_images/search_2.png
+[search_3]: ./output_images/search_3.png
+[search_4]:  ./output_images/search_4.png
+[search_comb]: ./output_images/search_comb.png
+[heatmap_1]: ./output_images/heatmap_1.png
+[heatmap_thres]: ./output_images/heatmap_thres.png
+[heatmap_lbl]: ./output_images/heatmap_lbl.png
+[drawn_img]: ./output_images/drawn_img.png
+[test_images]: ./output_images/test_images.png
+
 
 ## [Rubric](https://review.udacity.com/#!/rubrics/513/view) Points
 ### Here I will consider the rubric points individually and describe how I addressed each point in my implementation.  
@@ -46,56 +53,131 @@ I started by reading in all the `vehicle` and `non-vehicle` images.  Here is an 
 
 I then explored different color spaces and different `skimage.hog()` parameters (`orientations`, `pixels_per_cell`, and `cells_per_block`).  I grabbed random images from each of the two classes and displayed them to get a feel for what the `skimage.hog()` output looks like.
 
-Here is an example using the `YCrCb` color space and HOG parameters of `orientations=8`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`:
+Here is an example using the `BGR` color space and HOG parameters of `orientations=9`, `pixels_per_cell=(8, 8)` and `cells_per_block=(2, 2)`:
 
+![alt text][features_hog]
 
-![alt text][image2]
+I also explored features other than HOG. Specifically bin spatial features, here is a sample
+
+![alt text][features_spatial]
+
+... and color histogram features
+
+![alt text][features_color]
+
+In the end these feature vectores where stacked together and scaled using the sci-kit learn scaler.
+
 
 #### 2. Explain how you settled on your final choice of HOG parameters.
 
-I tried various combinations of parameters and...
+I run a thorough exploration of all possible combinations of parameters for the HOG feature extractor. I compared them using the prediction accuracy, using a separate test set, but also the time spent to extract features and train the classifier. One of my first observations was that feature extraction time varied significantly depending on parameters, up to more than 5x the minimum observed value.
+
+Here is a table of the top 20 results based on accuracy.
+
+|Accuracy | ColorSpace | Orientations | Pixels Per Cell | Cells Per Block | HOG Channel | Extract Time | Train time |
+| :-----: | :--------: | :----------: | :-------------: | :-------------: | :---------: | :----------: | :---------:|
+| 0.9977 | HSV | 10 | 16 | 2 | ALL | 123.87 | 297.52 |
+| 0.9972 | YUV | 11 | 16 | 2 | ALL | 64.13 | 176.86 |
+| 0.9972 | YUV | 10 | 16 | 2 | ALL | 109.9 | 267.53 |
+| 0.9969 | YUV | 11 | 16 | 2 | ALL | 61.0 | 162.85 |
+| 0.9969 | HSV | 11 | 16 | 2 | ALL | 139.28 | 317.89 |
+| 0.9969 | HSV | 10 | 16 | 2 | ALL | 142.65 | 260.55 |
+| 0.9969 | HLS | 9 | 16 | 2 | ALL | 115.59 | 323.52 |
+| 0.9966 | LUV | 11 | 8 | 2 | 0 | 104.33 | 453.97 |
+| 0.9966 | HSV | 9 | 16 | 2 | ALL | 139.19 | 278.51 |
+| 0.9963 | YCrCb | 11 | 16 | 2 | ALL | 81.49 | 213.96 |
+| 0.9963 | HLS | 11 | 16 | 2 | ALL | 136.07 | 339.64 |
+| 0.9961 | HLS | 9 | 16 | 2 | ALL | 144.19 | 418.22 |
+| 0.9958 | LUV | 11 | 8 | 2 | 0 | 104.52 | 440.59 |
+| 0.9958 | HSV | 9 | 16 | 2 | ALL | 256.13 | 375.77 |
+| 0.9958 | HSV | 9 | 16 | 2 | 0 | 60.7 | 299.34 |
+| 0.9958 | HSV | 11 | 8 | 2 | 1 | 104.09 | 410.69 |
+| 0.9958 | HSV | 11 | 16 | 2 | 1 | 70.34 | 356.35 |
+| 0.9958 | HSV | 10 | 16 | 2 | 2 | 74.9 | 366.51 |
+| 0.9955 | LUV | 10 | 8 | 2 | 0 | 126.63 | 512.38 |
+| 0.9955 | HSV | 9 | 16 | 2 | 1 | 54.13 | 265.88 |
+
+The top result (`HSV, 10, 16,2, ALL`) gave a 99.77% accuracy in ~124s feature extaction time and ~298s train time, for a total of ~421s. However the second result (`YUV, 11, 16, 2, ALL`) gave a 99.72% accuracy in half the time ~241. Moreover, the next top 2 results were given with similar parameters, and the `YUV` colorspace, thus I opted to chose the following:
+
+* colorspace: **YUV**
+* channels: **ALL**
+* orientations: **11**
+* pixels per cell: **16**
+* cells per block: **2**
+
 
 #### 3. Describe how (and identify where in your code) you trained a classifier using your selected HOG features (and color features if you used them).
 
-I trained a linear SVM using...
+I trained a SVM classifier with a sbf kernel and chose `auto` for the gamma parameter. For the C parameter I eventually settled at 40 as a value that gave consistently good results. Exploring the parameters of the classifier was done manually.
+
+Here is a sample result of my `find_cars` method:
+
+![alt_text][find_cars]
 
 ### Sliding Window Search
 
 #### 1. Describe how (and identify where in your code) you implemented a sliding window search.  How did you decide what scales to search and how much to overlap windows?
 
-I decided to search random window positions at random scales all over the image and came up with this (ok just kidding I didn't actually ;):
+First I constrained the search to the bottom half of the image (4/7 specifically). Then I explored several different scales at specific regions of that bottom half.
 
-![alt text][image3]
+##### scale 1.0
 
-#### 2. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
+For scale 1.0, very little boxes, it made sense to search only further away from the car. Here is visualization of the search:
 
-Ultimately I searched on two scales using YCrCb 3-channel HOG features plus spatially binned color and histograms of color in the feature vector, which provided a nice result.  Here are some example images:
+![alt text][search_1]
 
-![alt text][image4]
+##### scale 1.5
+
+![alt text][search_2]
+
+##### scale 2.0
+
+![alt text][search_3]
+
+##### scale 3.0
+
+![alt text][search_4]
+
+##### Combined scales
+
+Overall the pipeline combined all of the above scales. Here is the final result over a test image
+
+![alt text][search_comb]
+
+
+#### 2. Heatmaps
+
+To address the overlapping detection I employed heatmaps. I used the detected boxes to generate a heatmap:
+
+![alt text][heatmap_1]
+
+Then applied a threshold over it
+
+![alt text][heatmap_thres]
+
+Next, I labelled the heatmaps melting overalpping boxes into singular regions
+
+![alt text][heatmap_lbl]
+
+Finally, I calculated bounding boxes out of the labels, and drew them onto the original image
+
+![alt text][drawn_img]
+
+
+#### 3. Show some examples of test images to demonstrate how your pipeline is working.  What did you do to optimize the performance of your classifier?
+
+Here is my pipeline applied to all the test images
+
+![alt text][test_images]
+
+
 ---
 
 ### Video Implementation
 
 #### 1. Provide a link to your final video output.  Your pipeline should perform reasonably well on the entire project video (somewhat wobbly or unstable bounding boxes are ok as long as you are identifying the vehicles most of the time with minimal false positives.)
-Here's a [link to my video result](./project_video.mp4)
 
-
-#### 2. Describe how (and identify where in your code) you implemented some kind of filter for false positives and some method for combining overlapping bounding boxes.
-
-I recorded the positions of positive detections in each frame of the video.  From the positive detections I created a heatmap and then thresholded that map to identify vehicle positions.  I then used `scipy.ndimage.measurements.label()` to identify individual blobs in the heatmap.  I then assumed each blob corresponded to a vehicle.  I constructed bounding boxes to cover the area of each blob detected.  
-
-Here's an example result showing the heatmap from a series of frames of video, the result of `scipy.ndimage.measurements.label()` and the bounding boxes then overlaid on the last frame of video:
-
-### Here are six frames and their corresponding heatmaps:
-
-![alt text][image5]
-
-### Here is the output of `scipy.ndimage.measurements.label()` on the integrated heatmap from all six frames:
-![alt text][image6]
-
-### Here the resulting bounding boxes are drawn onto the last frame in the series:
-![alt text][image7]
-
+Here's a [link to my video result](./project_video_out_cache_mp.mp4)
 
 
 ---
@@ -104,5 +186,5 @@ Here's an example result showing the heatmap from a series of frames of video, t
 
 #### 1. Briefly discuss any problems / issues you faced in your implementation of this project.  Where will your pipeline likely fail?  What could you do to make it more robust?
 
-Here I'll talk about the approach I took, what techniques I used, what worked and why, where the pipeline might fail and how I might improve it if I were going to pursue this project further.  
+The biggest issue with this project was computational performance. Unfortunately sklearn is CPU only and quite slow. To optimize computational speed I employed multiprocessing as much as possible. My pipeline does feature extraction at various scales; each extraction is a completely independent task. Thus multiprocessing is an ideal optimization method, as it provides true parallelism (sidestepping the Python GIL issue) for higher interprocess communication cost. Independent tasks means no interprocess communication maximizing performance gains, contrary to multithreading which provides partial parallelism (GIL) and very fast cross-thread communication.
 
